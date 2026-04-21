@@ -54,9 +54,9 @@ def _concatenate_videos(
         audio_layout=None):
 
     # Get info from first video
-    if not all([
-            fps, width, height, audio_sample_rate, audio_layout, audio_format
-            ]):
+    format_args = (
+        fps, width, height, audio_sample_rate, audio_layout, audio_format)
+    if not all(format_args):
         try:
             temp = av.open(paths[0], metadata_errors='ignore')
         except:
@@ -146,8 +146,7 @@ def _concatenate_videos(
             needs_resampling = (
                 audio_stream.layout.name != audio_layout
                 or audio_stream.time_base.denominator != audio_sample_rate
-                or audio_stream.format.name
-            )
+                or audio_stream.format.name != audio_format)
             audio_stream.thread_type = 'AUTO'  # Important for performance
             samples = []
             for audio_frame in container.decode(audio_stream):
@@ -168,15 +167,11 @@ def _concatenate_videos(
             sample_diff = expected_audio_samples - total_samples
             # Adjust duration
             if sample_diff > 0:
-                print('pad audio')
+                print('pad audio', sample_diff, needs_resampling)
                 # Pad with silence
-                silent_frame = av.AudioFrame(
-                    audio_format, audio_layout, sample_diff)
-                silent_frame.sample_rate = audio_sample_rate
-                for plane in silent_frame.planes:
-                    plane.update(np.zeros(
-                        sample_diff, dtype=np.float32).tobytes())
-                raw_samples.write(silent_frame)
+                raw_samples.write(create_silence(
+                    audio_format, audio_layout, audio_sample_rate,
+                    sample_diff))
             elif sample_diff < 0:
                 print('trim audio')
                 raw_samples.read(-sample_diff)  # Trim excess
@@ -204,6 +199,5 @@ def create_silence(
         audio_format, audio_layout, expected_audio_samples)
     silent_frame.sample_rate = audio_sample_rate
     for plane in silent_frame.planes:
-        plane.update(np.zeros(
-            expected_audio_samples, dtype=np.float32).tobytes())
+        plane.update(bytes(plane.buffer_size))
     return silent_frame
